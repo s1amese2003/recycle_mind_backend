@@ -2,8 +2,6 @@
 const express = require('express');
 const cors = require('cors');
 const db = require('./db'); // 引入数据库连接池
-// const bcrypt = require('bcrypt'); // 暂时禁用 bcrypt
-// const saltRounds = 10;
 
 // 创建 Express 应用
 const app = express();
@@ -18,84 +16,56 @@ app.use(express.json());
 
 // --- API 路由定义 ---
 
+// --- 用户认证 API ---
 /**
- * 登录接口 (已恢复为简单的明文对比)
+ * 登录接口
  * POST /api/user/login
  */
 app.post('/api/user/login', async (req, res) => {
   const { username, password } = req.body;
-
   console.log('登录请求(明文模式):', { username });
-
   if (!username || !password) {
     return res.status(400).json({ code: 40001, message: '用户名和密码不能为空。' });
   }
-
   try {
-    // 直接在 SQL 查询中比对用户名和明文密码
     const [users] = await db.query(
       'SELECT * FROM users WHERE username = ? AND password = ?',
       [username, password]
     );
-
-    // 检查是否查询到用户
     if (users.length > 0) {
       const user = users[0];
-      
-      // 检查账户是否被禁用
       if (!user.is_active) {
-        return res.status(403).json({
-          code: 50012,
-          message: '该账户已被禁用，请联系管理员。'
-        });
+        return res.status(403).json({ code: 50012, message: '该账户已被禁用，请联系管理员。' });
       }
-
-      // 登录成功
       res.json({
         code: 20000,
-        data: {
-          // 动态生成包含用户名的 token
-          token: `mock-${user.username}-token`
-        }
+        data: { token: `mock-${user.username}-token` }
       });
     } else {
-      // 用户名或密码错误
-      res.status(401).json({
-        code: 50008,
-        message: '用户名或密码错误。'
-      });
+      res.status(401).json({ code: 50008, message: '用户名或密码错误。' });
     }
   } catch (error) {
     console.error('登录 API 查询数据库时出错:', error);
-    res.status(500).json({
-      code: 50000,
-      message: '服务器内部错误，请稍后重试。'
-    });
+    res.status(500).json({ code: 50000, message: '服务器内部错误，请稍后重试。' });
   }
 });
 
 /**
- * 获取用户信息的接口 (已改造, 支持动态用户)
+ * 获取用户信息的接口
  * GET /api/user/info
  */
 app.get('/api/user/info', async (req, res) => {
   const token = req.headers['x-token'];
   console.log('接收到获取用户信息的请求，token:', token);
-
-  // 验证并从 token 中解析用户名
   if (token && token.startsWith('mock-') && token.endsWith('-token')) {
-    const username = token.substring(5, token.length - 6); // 截取 'mock-' 和 '-token' 中间的用户名
+    const username = token.substring(5, token.length - 6);
     console.log('从 token 中解析出的用户名:', username);
-
     try {
       const [users] = await db.query('SELECT * FROM users WHERE username = ?', [username]);
-
       if (users.length === 0) {
         return res.status(404).json({ code: 50014, message: '用户不存在。' });
       }
-
       const user = users[0];
-
       res.json({
         code: 20000,
         data: {
@@ -110,81 +80,41 @@ app.get('/api/user/info', async (req, res) => {
       res.status(500).json({ code: 50000, message: '服务器内部错误，请稍后重试。' });
     }
   } else {
-    res.status(401).json({
-      code: 50008,
-      message: '无效的 token'
-    });
+    res.status(401).json({ code: 50008, message: '无效的 token' });
   }
 });
 
 /**
- * 模拟用户登出的接口
+ * 用户登出接口
  * POST /api/user/logout
  */
 app.post('/api/user/logout', (req, res) => {
   console.log('接收到登出请求');
-  // 后端在这里通常会做一些 token 失效处理
-  res.json({
-    code: 20000,
-    data: 'success'
-  });
+  res.json({ code: 20000, data: 'success' });
 });
-
-
-// --- 启动服务器 ---
-app.listen(port, async () => {
-  try {
-    // 尝试从连接池中获取一个连接，测试数据库连通性
-    const connection = await db.getConnection();
-    console.log('🎉 数据库连接成功！');
-    // 释放连接，将其返回到连接池
-    connection.release();
-    console.log(`后端服务器正在 http://localhost:${port} 上运行`);
-  } catch (error) {
-    console.error('❌ 数据库连接失败:', error);
-    // 如果数据库连接失败，可以选择退出进程
-    process.exit(1);
-  }
-});
-
-
-// --- API 路由定义 ---
 
 // --- 废料管理 API ---
 /**
- * 获取废料列表 (已改造)
+ * 获取废料列表
  * GET /api/waste-material/list
  */
 app.get('/api/waste-material/list', async (req, res) => {
   console.log('接收到获取废料列表的请求');
   try {
     const [rows] = await db.query('SELECT * FROM waste_materials ORDER BY id ASC');
-    
-    // 注意：数据库返回的字段名是 stock_kg，前端可能需要 stock。
-    // 可以在这里进行映射，或者让前端直接使用新字段名。
-    // 这里我们暂时直接返回，让前端适应。
     const items = rows.map(item => ({
         ...item,
-        stock: item.stock_kg // 添加一个 stock 字段以兼容旧版前端（如果需要）
+        stock: item.stock_kg
     }));
-
     res.json({
       code: 20000,
-      data: {
-        items: items,
-        total: items.length
-      }
+      data: { items: items, total: items.length }
     });
   } catch (error) {
     console.error('获取废料列表 API 查询数据库时出错:', error);
-    res.status(500).json({
-      code: 50000,
-      message: '服务器内部错误，获取废料列表失败。'
-    });
+    res.status(500).json({ code: 50000, message: '服务器内部错误，获取废料列表失败。' });
   }
 });
-
-// --- 废料管理 API (增删改) ---
 
 /**
  * 新增废料
@@ -193,7 +123,6 @@ app.get('/api/waste-material/list', async (req, res) => {
 app.post('/api/waste-material', async (req, res) => {
   const { name, storage_area, composition, stock_kg, unit_price } = req.body;
   console.log('接收到新增废料请求:', { name });
-
   try {
     const [result] = await db.query(
       'INSERT INTO waste_materials (name, storage_area, composition, stock_kg, unit_price) VALUES (?, ?, ?, ?, ?)',
@@ -217,13 +146,11 @@ app.put('/api/waste-material/:id', async (req, res) => {
   const { id } = req.params;
   const { name, storage_area, composition, stock_kg, unit_price } = req.body;
   console.log(`接收到修改废料 ${id} 的请求:`, { name });
-
   try {
     const [result] = await db.query(
       'UPDATE waste_materials SET name = ?, storage_area = ?, composition = ?, stock_kg = ?, unit_price = ? WHERE id = ?',
       [name, storage_area, JSON.stringify(composition), stock_kg, unit_price, id]
     );
-
     if (result.affectedRows === 0) {
       return res.status(404).json({ code: 40401, message: '未找到指定ID的废料。' });
     }
@@ -241,7 +168,6 @@ app.put('/api/waste-material/:id', async (req, res) => {
 app.delete('/api/waste-material/:id', async (req, res) => {
   const { id } = req.params;
   console.log(`接收到删除废料 ${id} 的请求`);
-
   try {
     const [result] = await db.query('DELETE FROM waste_materials WHERE id = ?', [id]);
     if (result.affectedRows === 0) {
@@ -255,8 +181,203 @@ app.delete('/api/waste-material/:id', async (req, res) => {
 });
 
 
+// --- 产品管理 API ---
+
+/*
+--  请在您的 MySQL 数据库 'recycle_mind' 中执行以下 SQL 语句来创建 'products' 表：
+CREATE TABLE IF NOT EXISTS products (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    customer_name VARCHAR(255) NOT NULL,
+    model_number VARCHAR(255) NOT NULL,
+    category VARCHAR(255),
+    si_min DECIMAL(10, 5) DEFAULT 0.0,
+    si_max DECIMAL(10, 5) DEFAULT 0.0,
+    fe_min DECIMAL(10, 5) DEFAULT 0.0,
+    fe_max DECIMAL(10, 5) DEFAULT 0.0,
+    cu_min DECIMAL(10, 5) DEFAULT 0.0,
+    cu_max DECIMAL(10, 5) DEFAULT 0.0,
+    mn_min DECIMAL(10, 5) DEFAULT 0.0,
+    mn_max DECIMAL(10, 5) DEFAULT 0.0,
+    mg_min DECIMAL(10, 5) DEFAULT 0.0,
+    mg_max DECIMAL(10, 5) DEFAULT 0.0,
+    ti_min DECIMAL(10, 5) DEFAULT 0.0,
+    ti_max DECIMAL(10, 5) DEFAULT 0.0,
+    cr_min DECIMAL(10, 5) DEFAULT 0.0,
+    cr_max DECIMAL(10, 5) DEFAULT 0.0,
+    zn_min DECIMAL(10, 5) DEFAULT 0.0,
+    zn_max DECIMAL(10, 5) DEFAULT 0.0,
+    zr_min DECIMAL(10, 5) DEFAULT 0.0,
+    zr_max DECIMAL(10, 5) DEFAULT 0.0,
+    others_min DECIMAL(10, 5) DEFAULT 0.0,
+    others_max DECIMAL(10, 5) DEFAULT 0.0,
+    total_others_min DECIMAL(10, 5) DEFAULT 0.0,
+    total_others_max DECIMAL(10, 5) DEFAULT 0.0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+*/
+
+const mapRowToProduct = (row) => {
+    if (!row) return null;
+    return {
+        id: row.id,
+        customer_name: row.customer_name,
+        model_number: row.model_number,
+        category: row.category,
+        Si: { min: row.si_min, max: row.si_max },
+        Fe: { min: row.fe_min, max: row.fe_max },
+        Cu: { min: row.cu_min, max: row.cu_max },
+        Mn: { min: row.mn_min, max: row.mn_max },
+        Mg: { min: row.mg_min, max: row.mg_max },
+        Ti: { min: row.ti_min, max: row.ti_max },
+        Cr: { min: row.cr_min, max: row.cr_max },
+        Zn: { min: row.zn_min, max: row.zn_max },
+        Zr: { min: row.zr_min, max: row.zr_max },
+        others: { min: row.others_min, max: row.others_max },
+        total_others: { min: row.total_others_min, max: row.total_others_max },
+        created_at: row.created_at,
+        updated_at: row.updated_at
+    };
+};
+
+const mapProductToDbPayload = (product) => {
+    const payload = {
+        customer_name: product.customer_name,
+        model_number: product.model_number,
+        category: product.category,
+        si_min: product.Si?.min ?? 0.0,
+        si_max: product.Si?.max ?? 0.0,
+        fe_min: product.Fe?.min ?? 0.0,
+        fe_max: product.Fe?.max ?? 0.0,
+        cu_min: product.Cu?.min ?? 0.0,
+        cu_max: product.Cu?.max ?? 0.0,
+        mn_min: product.Mn?.min ?? 0.0,
+        mn_max: product.Mn?.max ?? 0.0,
+        mg_min: product.Mg?.min ?? 0.0,
+        mg_max: product.Mg?.max ?? 0.0,
+        ti_min: product.Ti?.min ?? 0.0,
+        ti_max: product.Ti?.max ?? 0.0,
+        cr_min: product.Cr?.min ?? 0.0,
+        cr_max: product.Cr?.max ?? 0.0,
+        zn_min: product.Zn?.min ?? 0.0,
+        zn_max: product.Zn?.max ?? 0.0,
+        zr_min: product.Zr?.min ?? 0.0,
+        zr_max: product.Zr?.max ?? 0.0,
+        others_min: product.others?.min ?? 0.0,
+        others_max: product.others?.max ?? 0.0,
+        total_others_min: product.total_others?.min ?? 0.0,
+        total_others_max: product.total_others?.max ?? 0.0,
+    };
+    Object.keys(payload).forEach(key => (payload[key] === undefined || payload[key] === null) && delete payload[key]);
+    return payload;
+};
+
 /**
- * 获取交易列表 (已改造)
+ * 获取产品列表
+ * GET /api/products
+ */
+app.get('/api/products', async (req, res) => {
+    console.log('接收到获取产品列表的请求');
+    try {
+        const [rows] = await db.query('SELECT * FROM products ORDER BY id ASC');
+        const items = rows.map(mapRowToProduct);
+        res.json({
+            code: 20000,
+            data: {
+                items: items,
+                total: items.length
+            }
+        });
+    } catch (error) {
+        console.error('获取产品列表 API 查询数据库时出错:', error);
+        res.status(500).json({ code: 50000, message: '服务器内部错误，获取产品列表失败。' });
+    }
+});
+
+/**
+ * 新增产品
+ * POST /api/products
+ */
+app.post('/api/products', async (req, res) => {
+    const productData = req.body;
+    console.log('接收到新增产品请求:', productData);
+
+    if (!productData || !productData.customer_name || !productData.model_number) {
+        return res.status(400).json({ code: 40001, message: '客户名称和型号不能为空。' });
+    }
+
+    try {
+        const payload = mapProductToDbPayload(productData);
+        const columns = Object.keys(payload).join(', ');
+        const placeholders = Object.keys(payload).map(() => '?').join(', ');
+        const values = Object.values(payload);
+        const sql = `INSERT INTO products (${columns}) VALUES (${placeholders})`;
+        const [result] = await db.query(sql, values);
+        const [newProduct] = await db.query('SELECT * FROM products WHERE id = ?', [result.insertId]);
+        res.status(201).json({
+            code: 20000,
+            data: mapRowToProduct(newProduct[0])
+        });
+    } catch (error) {
+        console.error('新增产品 API 数据库操作出错:', error);
+        res.status(500).json({ code: 50000, message: '服务器内部错误，新增产品失败。' });
+    }
+});
+
+/**
+ * 修改产品
+ * PUT /api/products/:id
+ */
+app.put('/api/products/:id', async (req, res) => {
+    const { id } = req.params;
+    const productData = req.body;
+    console.log(`接收到修改产品 ${id} 的请求:`, productData);
+
+    try {
+        const payload = mapProductToDbPayload(productData);
+        if (Object.keys(payload).length === 0) {
+            return res.status(400).json({ code: 40001, message: '没有提供需要更新的字段。' });
+        }
+        const setClauses = Object.keys(payload).map(key => `${key} = ?`).join(', ');
+        const values = [...Object.values(payload), id];
+        const sql = `UPDATE products SET ${setClauses} WHERE id = ?`;
+        const [result] = await db.query(sql, values);
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ code: 40401, message: '未找到指定ID的产品。' });
+        }
+        const [updatedProduct] = await db.query('SELECT * FROM products WHERE id = ?', [id]);
+        res.json({ 
+            code: 20000, 
+            data: mapRowToProduct(updatedProduct[0])
+        });
+    } catch (error) {
+        console.error(`修改产品 ${id} API 数据库操作出错:`, error);
+        res.status(500).json({ code: 50000, message: '服务器内部错误，修改产品失败。' });
+    }
+});
+
+/**
+ * 删除产品
+ * DELETE /api/products/:id
+ */
+app.delete('/api/products/:id', async (req, res) => {
+    const { id } = req.params;
+    console.log(`接收到删除产品 ${id} 的请求`);
+    try {
+        const [result] = await db.query('DELETE FROM products WHERE id = ?', [id]);
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ code: 40401, message: '未找到指定ID的产品。' });
+        }
+        res.json({ code: 20000, data: 'success' });
+    } catch (error) {
+        console.error(`删除产品 ${id} API 数据库操作出错:`, error);
+        res.status(500).json({ code: 50000, message: '服务器内部错误，删除产品失败。' });
+    }
+});
+
+// --- 交易管理 API ---
+/**
+ * 获取交易列表
  * GET /api/transaction/list
  */
 app.get('/api/transaction/list', async (req, res) => {
@@ -279,32 +400,27 @@ app.get('/api/transaction/list', async (req, res) => {
 });
 
 // --- 生产管理 API ---
-
 /**
- * 获取生产计划列表 (已改造)
+ * 获取生产计划列表
  * GET /api/production/plan/list
  */
 app.get('/api/production/plan/list', async (req, res) => {
   console.log('接收到获取生产计划列表的请求');
   try {
     const [rows] = await db.query('SELECT * FROM production_plans ORDER BY start_time DESC');
-    
-    // --- [核心修改] 开始：将 snake_case 转换为 camelCase ---
     const items = rows.map(item => ({
       id: item.id,
-      productName: item.product_name, // 数据库 product_name -> 前端 productName
-      targetAmount: item.target_amount, // 数据库 target_amount -> 前端 targetAmount
+      productName: item.product_name,
+      targetAmount: item.target_amount,
       unit: item.unit,
-      startTime: item.start_time, // 数据库 start_time -> 前端 startTime
+      startTime: item.start_time,
       status: item.status,
       remark: item.remark
     }));
-    // --- [核心修改] 结束 ---
-
     res.json({
       code: 20000,
       data: {
-        items: items // 返回转换后的数据
+        items: items
       }
     });
   } catch (error) {
@@ -317,33 +433,29 @@ app.get('/api/production/plan/list', async (req, res) => {
 });
 
 /**
- * 获取生产记录列表 (已改造)
+ * 获取生产记录列表
  * GET /api/production/record/list
  */
 app.get('/api/production/record/list', async (req, res) => {
   console.log('接收到获取生产记录列表的请求');
   try {
     const [rows] = await db.query('SELECT * FROM production_records ORDER BY production_time DESC');
-    
-    // --- [核心修改] 开始：将 snake_case 转换为 camelCase ---
     const items = rows.map(item => ({
         id: item.id,
-        planId: item.plan_id, // 数据库 plan_id -> 前端 planId
-        productName: item.product_name, // 数据库 product_name -> 前端 productName
-        actualAmount: item.actual_amount, // 数据库 actual_amount -> 前端 actualAmount
+        planId: item.plan_id,
+        productName: item.product_name,
+        actualAmount: item.actual_amount,
         unit: item.unit,
-        productionTime: item.production_time, // 数据库 production_time -> 前端 productionTime
+        productionTime: item.production_time,
         operator: item.operator,
-        qualityCheck: item.quality_check, // 数据库 quality_check -> 前端 qualityCheck
-        qualityReport: item.quality_report, // 数据库 quality_report -> 前端 qualityReport
-        materials: item.materials // 假设 materials 是 JSON 字符串或前端可直接处理的格式
+        qualityCheck: item.quality_check,
+        qualityReport: item.quality_report,
+        materials: item.materials
     }));
-    // --- [核心修改] 结束 ---
-
     res.json({
       code: 20000,
       data: {
-        items: items // 返回转换后的数据
+        items: items
       }
     });
   } catch (error) {
@@ -355,9 +467,6 @@ app.get('/api/production/record/list', async (req, res) => {
   }
 });
 
-// --- 生产管理 API (增删改) ---
-
-// --- 生产计划 ---
 /**
  * 新增生产计划
  * POST /api/production/plan
@@ -387,11 +496,8 @@ app.post('/api/production/plan', async (req, res) => {
 app.put('/api/production/plan/:id', async (req, res) => {
   const { id } = req.params;
   const { product_name, target_amount, unit, start_time, status } = req.body;
-  
-  // 格式化 start_time 以适配 MySQL 的 DATETIME 类型
   const formattedStartTime = start_time.replace('T', ' ').substring(0, 19);
   console.log(`接收到修改生产计划 ${id} 的请求，格式化后时间:`, formattedStartTime);
-
   try {
     const [result] = await db.query(
       'UPDATE production_plans SET product_name = ?, target_amount = ?, unit = ?, start_time = ?, status = ? WHERE id = ?',
@@ -412,11 +518,6 @@ app.put('/api/production/plan/:id', async (req, res) => {
 app.delete('/api/production/plan/:id', async (req, res) => {
   const { id } = req.params;
   try {
-    // 在删除计划前，需要考虑如何处理关联的生产记录。
-    // 方案1：一起删除 (CASCADE) - 在数据库层面设置
-    // 方案2：将记录的 plan_id 设为 NULL (SET NULL) - 我们已在建表时设置
-    // 方案3：禁止删除 - 在代码层面判断
-    // 我们采用方案2，所以可以直接删除。
     const [result] = await db.query('DELETE FROM production_plans WHERE id = ?', [id]);
     if (result.affectedRows === 0) return res.status(404).json({ code: 40401, message: '未找到计划。' });
     res.json({ code: 20000, data: 'success' });
@@ -426,8 +527,6 @@ app.delete('/api/production/plan/:id', async (req, res) => {
   }
 });
 
-
-// --- 生产记录 ---
 /**
  * 新增生产记录
  * POST /api/production/record
@@ -487,15 +586,14 @@ app.delete('/api/production/record/:id', async (req, res) => {
   }
 });
 
-
+// --- 用户管理 API ---
 /**
- * 获取用户列表 (已改造)
+ * 获取用户列表
  * GET /api/users
 */
 app.get('/api/users', async (req, res) => {
   console.log('接收到获取用户列表的请求');
   try {
-    // 查询时排除 password 字段，保证安全
     const [users] = await db.query("SELECT id, username, role, email, is_active, created_at FROM users");
     res.json({
         code: 20000,
@@ -523,18 +621,15 @@ app.post('/api/users', async (req, res) => {
   }
 
   try {
-    // 直接存储明文密码
     const [result] = await db.query(
       'INSERT INTO users (username, password, role, email) VALUES (?, ?, ?, ?)',
       [username, password, role, email]
     );
-    
     res.status(201).json({
       code: 20000,
       data: { id: result.insertId, username, role, email }
     });
   } catch (error) {
-    // 捕获唯一键冲突错误 (例如用户名重复)
     if (error.code === 'ER_DUP_ENTRY') {
       return res.status(409).json({ code: 40901, message: '用户名或邮箱已存在。' });
     }
@@ -580,7 +675,6 @@ app.delete('/api/users/:id', async (req, res) => {
   const { id } = req.params;
   console.log(`接收到删除用户 ${id} 的请求`);
 
-  // 防止误删ID为1的超级管理员
   if (id === '1') {
     return res.status(403).json({ code: 40301, message: '出于安全考虑，禁止删除超级管理员。' });
   }
@@ -596,5 +690,18 @@ app.delete('/api/users/:id', async (req, res) => {
   } catch (error) {
     console.error(`删除用户 ${id} API 数据库操作出错:`, error);
     res.status(500).json({ code: 50000, message: '服务器内部错误，删除用户失败。' });
+  }
+});
+
+// --- 启动服务器 ---
+app.listen(port, async () => {
+  try {
+    const connection = await db.getConnection();
+    console.log('🎉 数据库连接成功！');
+    connection.release();
+    console.log(`后端服务器正在 http://localhost:${port} 上运行`);
+  } catch (error) {
+    console.error('❌ 数据库连接失败:', error);
+    process.exit(1);
   }
 });
